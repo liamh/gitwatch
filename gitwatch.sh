@@ -37,13 +37,14 @@ BRANCH=""
 SLEEP_TIME=2
 DATE_FMT="+%Y-%m-%d %H:%M:%S"
 COMMITMSG="Scripted auto-commit on change (%d) by gitwatch.sh"
+AMENDR=0
 
 shelp () { # Print a message about how to use this script
     echo "gitwatch - watch file or directory and git commit all changes as they happen"
     echo ""
     echo "Usage:"
     echo "${0##*/} [-s <secs>] [-d <fmt>] [-r <remote> [-b <branch>]]"
-    echo "          [-m <msg>] <target>"
+    echo "          [-m <msg>] [-a] <target>"
     echo ""
     echo "Where <target> is the file or folder which should be watched. The target needs"
     echo "to be in a Git repository, or in the case of a folder, it may also be the top"
@@ -73,6 +74,7 @@ shelp () { # Print a message about how to use this script
     echo "                  (unless the <fmt> specified by -d is empty, in which case %d"
     echo "                  is replaced by an empty string); the default message is:"
     echo "                  \"Scripted auto-commit on change (%d) by gitwatch.sh\""
+    echo " -a               If the last commit has not been pushed, amend this commit to it"
     echo ""
     echo "As indicated, several conditions are only checked once at launch of the"
     echo "script. You can make changes to the repo state and configurations even while"
@@ -93,7 +95,7 @@ stderr () {
     echo $1 >&2
 }
 
-while getopts b:d:hm:p:r:s: option # Process command line options 
+while getopts b:d:hm:p:r:s:a option # Process command line options 
 do 
     case "${option}" in 
         b) BRANCH=${OPTARG};;
@@ -102,6 +104,7 @@ do
         m) COMMITMSG=${OPTARG};;
         p|r) REMOTE=${OPTARG};;
         s) SLEEP_TIME=${OPTARG};;
+	a) AMENDR=1;;
     esac
 done
 
@@ -133,12 +136,12 @@ if [ -d $1 ]; then # if the target is a directory
     TARGETDIR=$(sed -e "s/\/*$//" <<<"$IN") # dir to CD into before using git commands: trim trailing slash, if any
     INCOMMAND="$INW --exclude=\"^${TARGETDIR}/.git\" -qqr -e close_write,move,delete,create $TARGETDIR" # construct inotifywait-commandline
     GIT_ADD_ARGS="." # add "." (CWD) recursively to index
-    GIT_COMMIT_ARGS="-a" # add -a switch to "commit" call just to be sure
+    GIT_COMMIT_ARGS="--all $AMEND" # add --all switch to "commit" call including removals just to be sure
 elif [ -f $1 ]; then # if the target is a single file
     TARGETDIR=$(dirname "$IN") # dir to CD into before using git commands: extract from file name
     INCOMMAND="$INW -qq -e close_write,move,delete $IN" # construct inotifywait-commandline
     GIT_ADD_ARGS="$IN" # add only the selected file to index
-    GIT_COMMIT_ARGS="" # no need to add anything more to "commit" call
+    GIT_COMMIT_ARGS="$AMEND" # no need to add anything more to "commit" call
 else
     stderr "Error: The target is neither a regular file nor a directory."
     exit 1
@@ -175,9 +178,13 @@ while true; do
     if [ -n "$DATE_FMT" ]; then
         FORMATTED_COMMITMSG="$(sed "s/%d/$(date "$DATE_FMT")/" <<< "$COMMITMSG")" # splice the formatted date-time into the commit message
     fi
+    if [ "$AMENDR" -eq 1 ] && [ -z "$(git branch -r --contains HEAD)" ]; then
+        # Do an amended commit if it is requested and the current HEAD has not been pushed
+	GIT_COMMIT_ARGS_CUR=$GIT_COMMIT_ARGS" --amend"
+    fi
     cd $TARGETDIR # CD into right dir
     $GIT add $GIT_ADD_ARGS # add file(s) to index
-    $GIT commit $GIT_COMMIT_ARGS -m"$FORMATTED_COMMITMSG" # construct commit message and commit
+    $GIT commit $GIT_COMMIT_ARGS_CUR -m"$FORMATTED_COMMITMSG" # construct commit message and commit
 
     if [ -n "$PUSH_CMD" ]; then $PUSH_CMD; fi
 done
