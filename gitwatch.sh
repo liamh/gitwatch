@@ -136,12 +136,12 @@ if [ -d $1 ]; then # if the target is a directory
     TARGETDIR=$(sed -e "s/\/*$//" <<<"$IN") # dir to CD into before using git commands: trim trailing slash, if any
     INCOMMAND="$INW --exclude=\"^${TARGETDIR}/.git\" -qqr -e close_write,move,delete,create $TARGETDIR" # construct inotifywait-commandline
     GIT_ADD_ARGS="." # add "." (CWD) recursively to index
-    GIT_COMMIT_ARGS="--all $AMEND" # add --all switch to "commit" call including removals just to be sure
+    GIT_COMMIT_ARGS="-a"
 elif [ -f $1 ]; then # if the target is a single file
     TARGETDIR=$(dirname "$IN") # dir to CD into before using git commands: extract from file name
     INCOMMAND="$INW -qq -e close_write,move,delete $IN" # construct inotifywait-commandline
     GIT_ADD_ARGS="$IN" # add only the selected file to index
-    GIT_COMMIT_ARGS="$AMEND" # no need to add anything more to "commit" call
+    GIT_COMMIT_ARGS="" # no need to add anything more to "commit" call
 else
     stderr "Error: The target is neither a regular file nor a directory."
     exit 1
